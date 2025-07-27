@@ -1,0 +1,79 @@
+https://docs.cilium.io/en/stable/installation/k3s/
+
+assign static IP in router
+root@pi:/home/pi# ifconfig  | grep 192
+        inet 192.168.1.111  netmask 255.255.255.0  broadcast 192.168.1.255
+
+otherwise etcd crashing after a restart if IP is changed
+
+```
+curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC='--flannel-backend=none --disable-network-policy' sh -
+```
+
+--write-kubeconfig-mode=664
+
+https://docs.k3s.io/installation/configuration
+
+=> need to let normal user read kubeconfig
+
+/etc/systemd/system/k3s.service
+
+ systemctl daemon-reload
+
+ systemctl restart k3s
+
+
+or just
+chown pi:pi -R /etc/rancher/k3s
+
+
+
+we get issue with cilium envoy. it needs a specific build.
+following this issue, https://github.com/envoyproxy/envoy/issues/23339
+
+there are 2 options:
+1) use pre-built-image
+```
+kubectl set image daemonset/cilium-envoy -n kube-system cilium-envoy=danieljmr/cilium-envoy:pi-arm64-gperftools
+```
+
+2) recompiled the pi kernel with CONFIG_ARM64_VA_BITS_48=y
+
+
+verify
+root@pi:/home/pi# mkdir scripts
+root@pi:/home/pi# cat >> scripts/check-cilium.sh
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+cilium status --wait
+root@pi:/home/pi# bash scripts/check-cilium.sh
+    /¯¯\
+ /¯¯\__/¯¯\    Cilium:             OK
+ \__/¯¯\__/    Operator:           OK
+ /¯¯\__/¯¯\    Envoy DaemonSet:    OK
+ \__/¯¯\__/    Hubble Relay:       disabled
+    \__/       ClusterMesh:        disabled
+
+DaemonSet              cilium                   Desired: 1, Ready: 1/1, Available: 1/1
+DaemonSet              cilium-envoy             Desired: 1, Ready: 1/1, Available: 1/1
+Deployment             cilium-operator          Desired: 1, Ready: 1/1, Available: 1/1
+Containers:            cilium                   Running: 1
+                       cilium-envoy             Running: 1
+                       cilium-operator          Running: 1
+                       clustermesh-apiserver
+                       hubble-relay
+Cluster Pods:          8/8 managed by Cilium
+Helm chart version:    1.17.6
+Image versions         cilium             quay.io/cilium/cilium:v1.17.6@sha256:544de3d4fed7acba72758413812780a4972d47c39035f2a06d6145d8644a3353: 1
+                       cilium-envoy       danieljmr/cilium-envoy:pi-arm64-gperftools: 1
+                       cilium-operator    quay.io/cilium/operator-generic:v1.17.6@sha256:91ac3bf7be7bed30e90218f219d4f3062a63377689ee7246062fa0cc3839d096: 1
+
+root@pi:/home/pi# free -m
+               total        used        free      shared  buff/cache   available
+Mem:            3791        1146         813           4        1919        2644
+Swap:              0           0           0
+
+system appears to use 1.1Gb with a clean installation
+
+
+for future run, append this line to ~/.bashrc
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
